@@ -1,83 +1,135 @@
-use hdrhistogram::{
-  sync::{IdleRecorder, Recorder, SyncHistogram},
-  Histogram,
-};
-use tokio::task::JoinHandle;
+// Copyright 2024 Divy Srivastava <dj.srivastava23@gmail.com>
 
+//! EldHistogram supports recording and analyzing event loop delay using a High Dynamic Range (HDR)
+//! Histogram.
+//!
+//! Refer to documentation for [`hdrhistogram::Histogram`](https://docs.rs/hdrhistogram/latest/hdrhistogram/struct.Histogram.html) for more information
+//! on how to use the core data structure.
+//!
+//! # Usage
+//!
+//! ```rust
+//! use tokio_eld::EldHistogram;
+//!
+//! # #[tokio::test]
+//! # async fn test_example() {
+//! let mut h = EldHistogram::<u64>::new(20).unwrap();
+//! h.start();
+//! // do some work
+//! h.stop();
+//!
+//! println!("min: {}", h.min());
+//! println!("max: {}", h.max());
+//! println!("mean: {}", h.mean());
+//! println!("stddev: {}", h.stdev());
+//! println!("p50: {}", h.value_at_percentile(50.0));
+//! println!("p90: {}", h.value_at_percentile(90.0));
+//! # }
+//! ```
+
+use hdrhistogram::errors::CreationError;
+use hdrhistogram::Counter;
+use hdrhistogram::Histogram;
+
+use tokio::task::AbortHandle;
+
+use std::cell::UnsafeCell;
+
+/// Error types used in this crate.
 #[derive(Debug)]
-pub enum Error {}
+pub enum Error {
+  CreationError(CreationError),
+}
 
 impl std::fmt::Display for Error {
   fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-    write!(f, "Error")
+    match self {
+      Error::CreationError(e) => write!(f, "CreationError: {}", e),
+    }
+  }
+}
+
+impl std::error::Error for Error {}
+
+impl From<CreationError> for Error {
+  fn from(e: CreationError) -> Self {
+    Error::CreationError(e)
   }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// A `Histogram` that can written to concurrently by mutiple tasks, used to
+/// measure event loop delays.
+///
+/// Look at
+/// [`hdrhistogram::Histogram`](https://docs.rs/hdrhistogram/latest/hdrhistogram/struct.Histogram.html) for more information on how to use the
+/// core data structure.
 #[derive(Debug)]
-pub struct EldHistogram {
-  sync: SyncHistogram<u64>,
+pub struct EldHistogram<C: Counter> {
+  ht: UnsafeCell<Histogram<C>>,
 
-  fut: Option<JoinHandle<()>>,
+  fut: Option<AbortHandle>,
 
   resolution: usize,
 }
 
-impl std::ops::Deref for EldHistogram {
-  type Target = SyncHistogram<u64>;
+impl<C: Counter> std::ops::Deref for EldHistogram<C> {
+  type Target = Histogram<C>;
 
   fn deref(&self) -> &Self::Target {
-    &self.sync
+    unsafe { &*self.ht.get() }
   }
 }
 
-impl std::ops::DerefMut for EldHistogram {
+impl<C: Counter> std::ops::DerefMut for EldHistogram<C> {
   fn deref_mut(&mut self) -> &mut Self::Target {
-    &mut self.sync
+    unsafe { &mut *self.ht.get() }
   }
 }
 
-impl EldHistogram {
+impl<C: Counter + Send + 'static> EldHistogram<C> {
+  /// Creates a new `EldHistogram` with the given timer resolution that samples
+  /// the event loop delay over time. The delays are recorded in nanoseconds.
   pub fn new(resolution: usize) -> Result<Self> {
-    let ht = Histogram::<u64>::new(5).unwrap();
-
-    let sync = ht.into_sync();
+    let ht = Histogram::<C>::new(5)?;
 
     Ok(Self {
-      sync,
+      ht: UnsafeCell::new(ht),
       fut: None,
       resolution,
     })
   }
 
+  /// Start the update interval recorder.
+  ///
+  /// This will start a new task that will record the event loop delay at the
+  /// given resolution.
   pub fn start(&mut self) {
-    let recorder = self.sync.recorder().into_idle();
     let r = self.resolution as u64;
 
+    let ht = unsafe { &mut *self.ht.get() };
     let fut = tokio::spawn(async move {
       let mut interval =
         tokio::time::interval(tokio::time::Duration::from_millis(r));
       loop {
         interval.tick().await;
 
-        let mut recorder = recorder.recorder();
         let clock = tokio::time::Instant::now();
 
         tokio::task::yield_now().await;
-        recorder.record(clock.elapsed().as_millis() as u64).unwrap();
+        let _ = ht.record(clock.elapsed().as_nanos() as u64);
       }
     });
 
-    self.fut = Some(fut);
+    self.fut = Some(fut.abort_handle());
   }
 
+  /// Stop the update interval recorder.
   pub fn stop(&mut self) {
     if let Some(fut) = self.fut.take() {
       fut.abort();
     }
-
-    self.refresh();
   }
 }
 
@@ -87,11 +139,11 @@ mod tests {
 
   #[tokio::test]
   async fn test_eld() {
-    let mut h = EldHistogram::new(10).unwrap();
+    let mut h = EldHistogram::<u64>::new(20).unwrap();
     h.start();
     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
     h.stop();
 
-    assert!(h.min() <= 5);
+    assert!(h.min() > 0);
   }
 }
