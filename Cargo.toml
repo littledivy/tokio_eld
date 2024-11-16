@@ -2,6 +2,8 @@
 name = "tokio-eld"
 version = "0.1.0"
 edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Histogram-based sampler for recording and analyzing event loop delays"
 
 [dependencies]
 hdrhistogram = "7.5.4"
