@@ -1,7 +1,7 @@
 // Copyright 2024 Divy Srivastava <dj.srivastava23@gmail.com>
 
 //! EldHistogram supports recording and analyzing event loop delay using a High Dynamic Range (HDR)
-//! Histogram.
+//! Histogram. The recorded delays are in nanoseconds.
 //!
 //! Refer to documentation for [`hdrhistogram::Histogram`](https://docs.rs/hdrhistogram/latest/hdrhistogram/struct.Histogram.html) for more information
 //! on how to use the core data structure.
