@@ -1,5 +1,11 @@
 // Copyright 2024 Divy Srivastava <dj.srivastava23@gmail.com>
 
+//! _tokio_eld_ provides a histogram-based sampler for recording and analyzing
+//! event loop delays in a current_thread Tokio runtime. The API is similar to
+//! Node.js's `perf_hooks.monitorEventLoopDelay()`.
+//!
+//! # EldHistogram
+//!
 //! EldHistogram supports recording and analyzing event loop delay using a High Dynamic Range (HDR)
 //! Histogram. The recorded delays are in nanoseconds.
 //!
