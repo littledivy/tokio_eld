@@ -218,6 +218,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-eld"
+version = "0.1.0"
+dependencies = [
+ "hdrhistogram",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-macros"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -226,14 +234,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
-]
-
-[[package]]
-name = "tokio_eld"
-version = "0.1.0"
-dependencies = [
- "hdrhistogram",
- "tokio",
 ]
 
 [[package]]
