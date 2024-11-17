@@ -39,6 +39,7 @@ use hdrhistogram::Histogram;
 
 use tokio::task::AbortHandle;
 
+use std::cell::Cell;
 use std::cell::UnsafeCell;
 
 /// Error types used in this crate.
@@ -71,11 +72,10 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// Look at
 /// [`hdrhistogram::Histogram`](https://docs.rs/hdrhistogram/latest/hdrhistogram/struct.Histogram.html) for more information on how to use the
 /// core data structure.
-#[derive(Debug)]
 pub struct EldHistogram<C: Counter> {
   ht: UnsafeCell<Histogram<C>>,
 
-  fut: Option<AbortHandle>,
+  fut: Cell<Option<AbortHandle>>,
 
   resolution: usize,
 }
@@ -102,7 +102,7 @@ impl<C: Counter + Send + 'static> EldHistogram<C> {
 
     Ok(Self {
       ht: UnsafeCell::new(ht),
-      fut: None,
+      fut: Cell::new(None),
       resolution,
     })
   }
@@ -111,7 +111,7 @@ impl<C: Counter + Send + 'static> EldHistogram<C> {
   ///
   /// This will start a new task that will record the event loop delay at the
   /// given resolution.
-  pub fn start(&mut self) {
+  pub fn start(&self) {
     let r = self.resolution as u64;
 
     let ht = unsafe { &mut *self.ht.get() };
@@ -128,11 +128,11 @@ impl<C: Counter + Send + 'static> EldHistogram<C> {
       }
     });
 
-    self.fut = Some(fut.abort_handle());
+    self.fut.set(Some(fut.abort_handle()));
   }
 
   /// Stop the update interval recorder.
-  pub fn stop(&mut self) {
+  pub fn stop(&self) {
     if let Some(fut) = self.fut.take() {
       fut.abort();
     }
