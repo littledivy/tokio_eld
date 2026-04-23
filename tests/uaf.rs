@@ -19,40 +19,40 @@ use tokio_eld::EldHistogram;
 /// The task will then access freed memory on its next tick.
 #[test]
 fn drop_while_task_running_is_uaf() {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()
-        .unwrap();
+  let rt = tokio::runtime::Builder::new_current_thread()
+    .enable_time()
+    .build()
+    .unwrap();
 
-    rt.block_on(async {
-        let h = EldHistogram::<u64>::new(1).unwrap();
-        h.start();
-        // Let the task tick at least once.
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        // Drop self. The spawned task keeps running and holds &mut into self.ht.
-        drop(h);
-        // Yield so the task polls again and touches freed memory.
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    });
+  rt.block_on(async {
+    let h = EldHistogram::<u64>::new(1).unwrap();
+    h.start();
+    // Let the task tick at least once.
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    // Drop self. The spawned task keeps running and holds &mut into self.ht.
+    drop(h);
+    // Yield so the task polls again and touches freed memory.
+    tokio::time::sleep(Duration::from_millis(20)).await;
+  });
 }
 
 /// `stop()` aborts but does not join the task. If the task is mid-poll when
 /// `self` is dropped, the same UAF window applies.
 #[test]
 fn stop_then_drop_is_still_racy() {
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_time()
-        .build()
-        .unwrap();
+  let rt = tokio::runtime::Builder::new_current_thread()
+    .enable_time()
+    .build()
+    .unwrap();
 
-    rt.block_on(async {
-        let h = EldHistogram::<u64>::new(1).unwrap();
-        h.start();
-        tokio::time::sleep(Duration::from_millis(10)).await;
-        h.stop();
-        // abort() is cooperative — the task may already be past the yield_now()
-        // point and about to call ht.record() on freed memory.
-        drop(h);
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    });
+  rt.block_on(async {
+    let h = EldHistogram::<u64>::new(1).unwrap();
+    h.start();
+    tokio::time::sleep(Duration::from_millis(10)).await;
+    h.stop();
+    // abort() is cooperative — the task may already be past the yield_now()
+    // point and about to call ht.record() on freed memory.
+    drop(h);
+    tokio::time::sleep(Duration::from_millis(20)).await;
+  });
 }
